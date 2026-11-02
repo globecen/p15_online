@@ -1,13 +1,14 @@
 import asyncio
 import logging
+import subprocess
 import time
-from typing import Optional, Callable, Dict, Any, List
+from typing import Optional, Callable, Dict, Any, List, Union
 
 import config
 
 logger = logging.getLogger("p15_ble")
 
-# UUIDs
+# UUIDs GATT pour Pristar P15 / Marklife
 SERVICE_PRIMARY = "0000ff00-0000-1000-8000-00805f9b34fb"
 SERVICE_FALLBACK = "49535343-fe7d-4ae5-8fa9-9fafd205e455"
 
@@ -16,7 +17,7 @@ CHAR_TX = "0000ff02-0000-1000-8000-00805f9b34fb"
 CHAR_CX = "0000ff03-0000-1000-8000-00805f9b34fb"
 
 KNOWN_PREFIXES = (
-  "P15", "P15R", "P15S", "P15Pro", "Pristar", "PRISTAR", "pristar", "P-15",
+  "P15", "P15_", "P15R", "P15S", "P15Pro", "Pristar", "PRISTAR", "pristar", "P-15",
   "Marklife", "P7", "P7R", "P12", "P11", "LP15", "M1", "S15", "S12", "P1s", "LPC74", "Printer"
 )
 
@@ -35,6 +36,7 @@ class PristarP15Driver:
     self.last_credit_time = time.time()
     self.print_ack_event = asyncio.Event()
     self._lock = asyncio.Lock()
+    self._device_cache: Dict[str, Any] = {}
 
   async def scan(self, timeout: int = 5) -> List[Dict[str, Any]]:
     """Scanne les périphériques Bluetooth à proximité via Bleak. Retourne uniquement les vrais périphériques détectés."""
@@ -43,6 +45,7 @@ class PristarP15Driver:
       devices = await BleakScanner.discover(timeout=timeout)
       results = []
       for d in devices:
+        self._device_cache[d.address.upper()] = d
         name = d.name or "Inconnu"
         is_p15 = any(name.startswith(p) for p in KNOWN_PREFIXES)
         results.append({
@@ -71,61 +74,116 @@ class PristarP15Driver:
       except Exception as e:
         logger.warning(f"Échec de connexion à {target_addr}: {e}")
 
-    # Essayer de scanner si Bleak / Bluetooth est disponible sur l'hôte
+    # Scanner pour trouver une P15 réelle et capturer son objet BLEDevice natif
     try:
       logger.info("Scan automatique pour trouver une imprimante Pristar P15 réelle...")
-      devices = await self.scan(timeout=4)
-      p15_devices = [d for d in devices if d.get("is_p15")]
-      if p15_devices:
-        best = p15_devices[0]
-        logger.info(f"Imprimante réelle détectée : {best['name']} ({best['address']}). Connexion...")
-        return await self.connect(best["address"])
+      from bleak import BleakScanner
+      devices = await BleakScanner.discover(timeout=4.0)
+      for d in devices:
+        self._device_cache[d.address.upper()] = d
+        name = d.name or "Inconnu"
+        if any(name.startswith(p) for p in KNOWN_PREFIXES):
+          logger.info(f"Imprimante réelle détectée : {name} ({d.address}). Connexion via BLEDevice...")
+          return await self.connect(d)
     except Exception as e:
       logger.warning(f"Scan automatique non concluant: {e}")
 
     logger.info("Aucune imprimante P15 réelle trouvée.")
     return False
 
-  async def connect(self, address: str) -> bool:
-    """Connecte le serveur Docker à la Pristar P15 réelle."""
-    if address == "auto" or not address:
+  def _clean_bluez_stale_cache(self, address: str):
+    """Supprime l'appareil du cache BlueZ pour éviter le bug br-connection-profile-unavailable."""
+    try:
+      logger.info(f"Nettoyage du cache BlueZ pour {address} via bluetoothctl...")
+      subprocess.run(["bluetoothctl", "remove", address], capture_output=True, timeout=2.0)
+    except Exception as e:
+      logger.debug(f"Nettoyage bluetoothctl ignoré : {e}")
+
+  async def connect(self, target: Any) -> bool:
+    """
+    Connecte le serveur Docker à la Pristar P15 réelle.
+    Accepte soit une adresse MAC (str), soit directement un objet BLEDevice.
+    """
+    if target == "auto" or not target:
       return await self.auto_connect()
 
     async with self._lock:
       if self.connected:
         await self.disconnect()
 
+      from bleak import BleakClient, BleakScanner
+      from bleak.backends.device import BLEDevice
+
+      ble_device = None
+      target_address = ""
+
+      if isinstance(target, BLEDevice):
+        ble_device = target
+        target_address = target.address
+      elif isinstance(target, str):
+        target_address = target
+        # Chercher dans le cache des appareils scannés pour avoir l'objet BLEDevice
+        ble_device = self._device_cache.get(target.upper())
+        if not ble_device:
+          logger.info(f"Recherche de l'objet BLEDevice pour l'adresse {target}...")
+          try:
+            ble_device = await BleakScanner.find_device_by_address(target, timeout=4.0)
+            if ble_device:
+              self._device_cache[target.upper()] = ble_device
+          except Exception as e:
+            logger.debug(f"find_device_by_address non résolu : {e}")
+
+      # Utiliser l'objet BLEDevice en priorité pour éviter que BlueZ confonde avec Classic BR/EDR
+      device_to_connect = ble_device if ble_device is not None else target_address
+
+      logger.info(f"Connexion BLE réelle à {target_address} (mode: {'BLEDevice' if ble_device else 'MAC string'})...")
+
+      # Tentative 1
       try:
-        from bleak import BleakClient
-
-        logger.info(f"Connexion BLE réelle à {address}...")
-        self.client = BleakClient(address, timeout=12.0)
+        self.client = BleakClient(device_to_connect, timeout=14.0)
         await self.client.connect()
+      except Exception as conn_err:
+        err_msg = str(conn_err)
+        # Si BlueZ a bloqué en mode Classic (br-connection-profile-unavailable), vider le cache et relancer
+        if "br-connection-profile-unavailable" in err_msg or "NotAvailable" in err_msg:
+          logger.warning(f"Erreur de profil BlueZ détectée : {err_msg}. Nettoyage et tentative en mode BLE forcé...")
+          self._clean_bluez_stale_cache(target_address)
+          await asyncio.sleep(1.0)
 
-        self.device_address = address
-        self.device_name = getattr(self.client, "name", "Pristar P15") or "Pristar P15"
-        self.connected = True
+          # Redécouvrir l'appareil pour régénérer le profil BLE GATT propre
+          fresh_device = await BleakScanner.find_device_by_address(target_address, timeout=6.0)
+          if fresh_device:
+            self._device_cache[target_address.upper()] = fresh_device
+            self.client = BleakClient(fresh_device, timeout=14.0)
+            await self.client.connect()
+          else:
+            raise conn_err
+        else:
+          logger.error(f"Échec de connexion Bluetooth réelle à {target_address}: {conn_err}")
+          self.connected = False
+          self.client = None
+          raise
 
-        # Configuration notifications RX & CX
+      self.device_address = target_address
+      self.device_name = getattr(self.client, "name", "Pristar P15") or getattr(ble_device, "name", "Pristar P15") or "Pristar P15"
+      self.connected = True
+
+      # Configuration notifications RX & CX
+      try:
         await self.client.start_notify(CHAR_RX, self._handle_rx)
-        try:
-          await self.client.start_notify(CHAR_CX, self._handle_cx)
-          # Attente crédits initiaux
-          await asyncio.sleep(0.5)
-        except Exception:
-          # Pas de CX distinct -> crédits par défaut
-          self.credits = 4
+      except Exception as rx_err:
+        logger.warning(f"Notification RX non activée : {rx_err}")
 
-        # Requête de batterie
-        await self.query_battery()
-        logger.info(f"Connecté avec succès à {self.device_name} ({address})")
-        return True
+      try:
+        await self.client.start_notify(CHAR_CX, self._handle_cx)
+        await asyncio.sleep(0.5)
+      except Exception:
+        self.credits = 4
 
-      except Exception as e:
-        logger.error(f"Échec de connexion Bluetooth réelle à {address}: {e}")
-        self.connected = False
-        self.client = None
-        raise
+      # Requête de batterie
+      await self.query_battery()
+      logger.info(f"Connecté avec succès à {self.device_name} ({target_address})")
+      return True
 
   def _handle_rx(self, sender, data: bytearray):
     if not data:
