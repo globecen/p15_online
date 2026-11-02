@@ -82,14 +82,18 @@ Le fichier `docker-compose.yml` (ou un fichier `.env`) permet d'ajuster les rég
 
 *(Note pour iPhone/iPad : utilisez l'application gratuite **Bluefy** qui supporte le Web Bluetooth).*
 
-### Cas 2 : Vous hébergez Docker sur un serveur Linux dédié ou un Raspberry Pi
-Pour que le conteneur Docker gère lui-même la puce Bluetooth matérielle de l'hôte Linux, décommentez dans `docker-compose.yml` :
+### Cas 3 : Recherche en ligne de commande (CLI / Console)
+Si vous travaillez sur un serveur headless sans interface graphique, vous pouvez lancer le scan Bluetooth directement depuis le terminal :
 
-```yaml
-volumes:
-  - ./data:/app/data
-  - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+```bash
+# Directement via le conteneur Docker :
+docker exec -it pristar-p15-studio python /app/server/scan_cli.py
+
+# Ou avec bluetoothctl sur l'hôte Linux :
+bluetoothctl --timeout 8 scan on && bluetoothctl devices | grep -iE "P15|Marklife"
 ```
+
+Copiez l'adresse MAC affichée (ex: `AA:BB:CC:DD:EE:FF`) et ajoutez-la dans `docker-compose.yml` (`PRINTER_MAC`) pour une connexion automatique à chaque démarrage.
 
 ---
 
