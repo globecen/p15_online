@@ -45,8 +45,8 @@ Depuis la racine du projet :
 docker compose up -d --build
 ```
 
-L'application démarre immédiatement sur le port `8080` :
-👉 **`http://localhost:8080`** (ou `http://<IP_DE_VOTRE_SERVEUR>:8080`)
+L'application démarre immédiatement sur le port `9999` :
+👉 **`http://localhost:9999`** (ou `http://<IP_DE_VOTRE_SERVEUR>:9999`)
 
 ### 2. Première Connexion (Initialisation)
 À la première ouverture :
@@ -63,7 +63,7 @@ Le fichier `docker-compose.yml` (ou un fichier `.env`) permet d'ajuster les rég
 
 | Variable | Description | Valeur par défaut |
 |---|---|---|
-| `PORT` | Port d'écoute du serveur web | `8080` |
+| `PORT` | Port d'écoute du serveur web | `9999` |
 | `ADMIN_USERNAME` | Identifiant administrateur par défaut | `admin` |
 | `ADMIN_PASSWORD` | *(Optionnel)* Mot de passe prédéfini (si non renseigné, l'initialisation se fait via l'interface web) | *(Vide)* |
 | `SECRET_KEY` | Clé secrète de signature des tokens JWT | `pristar-p15-secure-docker-secret-key-2026` |
