@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { LabelDimensions, LabelElement, PX_PER_MM } from '../types/label';
 import { renderElementToCanvas } from '../utils/canvas-renderer';
-import { RotateCw, Move } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 
 interface CanvasEditorProps {
   dimensions: LabelDimensions;
@@ -42,6 +42,19 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const heightPx = Math.round(dimensions.heightMm * PX_PER_MM);
 
   const selectedElement = elements.find((el) => el.id === selectedId) || null;
+
+  // Refs pour éviter tout problème de closure périmée pendant le drag
+  const selectedElementRef = useRef(selectedElement);
+  selectedElementRef.current = selectedElement;
+
+  const dragStartRef = useRef(dragStart);
+  dragStartRef.current = dragStart;
+
+  const dragActionRef = useRef(dragAction);
+  dragActionRef.current = dragAction;
+
+  const activeHandleRef = useRef(activeHandle);
+  activeHandleRef.current = activeHandle;
 
   // Redessiner le canvas principal à chaque changement
   const drawCanvas = useCallback(async () => {
@@ -103,8 +116,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedElement, onUpdateElement, onDeleteSelected, onDuplicateSelected]);
 
-  // Convertir les coordonnées écran (souris ou toucher) en pixels natifs
-  const getCanvasCoords = (clientX: number, clientY: number) => {
+  // Convertir les coordonnées écran (souris ou toucher) en pixels natifs de l'étiquette
+  const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -114,83 +127,27 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       x: (clientX - rect.left) * scaleX,
       y: (clientY - rect.top) * scaleY,
     };
-  };
+  }, []);
 
-  // Clic ou tap sur le canvas
-  const handleStartAt = (clientX: number, clientY: number) => {
-    const { x, y } = getCanvasCoords(clientX, clientY);
+  // Déplacement souris ou doigt en cours
+  const handleMoveAt = useCallback((clientX: number, clientY: number) => {
+    const action = dragActionRef.current;
+    const start = dragStartRef.current;
+    const selected = selectedElementRef.current;
+    const handle = activeHandleRef.current;
 
-    const clicked = [...elements].reverse().find((el) => {
-      return (
-        x >= el.x &&
-        x <= el.x + el.width &&
-        y >= el.y &&
-        y <= el.y + el.height
-      );
-    });
-
-    if (clicked) {
-      onSelect(clicked.id);
-      setDragAction('move');
-      setDragStart({
-        mouseX: x,
-        mouseY: y,
-        initialEl: { ...clicked },
-      });
-    } else {
-      onSelect(null);
-    }
-  };
-
-  // Redimensionnement
-  const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, handle: ResizeHandle) => {
-    e.stopPropagation();
-    if (!selectedElement) return;
-
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    if (!action || !start || !selected) return;
 
     const { x, y } = getCanvasCoords(clientX, clientY);
-    setDragAction('resize');
-    setActiveHandle(handle);
-    setDragStart({
-      mouseX: x,
-      mouseY: y,
-      initialEl: { ...selectedElement },
-    });
-  };
+    const dx = x - start.mouseX;
+    const dy = y - start.mouseY;
+    const initial = start.initialEl;
 
-  // Rotation
-  const handleRotateStart = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    if (!selectedElement) return;
-
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-    const { x, y } = getCanvasCoords(clientX, clientY);
-    setDragAction('rotate');
-    setDragStart({
-      mouseX: x,
-      mouseY: y,
-      initialEl: { ...selectedElement },
-    });
-  };
-
-  // Déplacement souris ou doigt
-  const handleMoveAt = (clientX: number, clientY: number) => {
-    if (!dragAction || !dragStart || !selectedElement) return;
-
-    const { x, y } = getCanvasCoords(clientX, clientY);
-    const dx = x - dragStart.mouseX;
-    const dy = y - dragStart.mouseY;
-    const initial = dragStart.initialEl;
-
-    if (dragAction === 'move') {
+    if (action === 'move') {
       let newX = Math.round(initial.x + dx);
       let newY = Math.round(initial.y + dy);
 
-      // Aimantation
+      // Aimantation au centre
       const centerX = widthPx / 2;
       const centerY = heightPx / 2;
       const elCenterX = newX + initial.width / 2;
@@ -212,11 +169,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
 
       onUpdateElement({
-        ...selectedElement,
+        ...selected,
         x: newX,
         y: newY,
       });
-    } else if (dragAction === 'resize' && activeHandle) {
+    } else if (action === 'resize' && handle) {
       let newX = initial.x;
       let newY = initial.y;
       let newW = initial.width;
@@ -224,20 +181,20 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       const minSize = 10;
 
-      if (activeHandle.includes('e')) {
+      if (handle.includes('e')) {
         newW = Math.max(minSize, Math.round(initial.width + dx));
       }
-      if (activeHandle.includes('s')) {
+      if (handle.includes('s')) {
         newH = Math.max(minSize, Math.round(initial.height + dy));
       }
-      if (activeHandle.includes('w')) {
+      if (handle.includes('w')) {
         const potentialW = initial.width - dx;
         if (potentialW >= minSize) {
           newW = Math.round(potentialW);
           newX = Math.round(initial.x + dx);
         }
       }
-      if (activeHandle.includes('n')) {
+      if (handle.includes('n')) {
         const potentialH = initial.height - dy;
         if (potentialH >= minSize) {
           newH = Math.round(potentialH);
@@ -246,13 +203,13 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
 
       onUpdateElement({
-        ...selectedElement,
+        ...selected,
         x: newX,
         y: newY,
         width: newW,
         height: newH,
       });
-    } else if (dragAction === 'rotate') {
+    } else if (action === 'rotate') {
       const elCenterX = initial.x + initial.width / 2;
       const elCenterY = initial.y + initial.height / 2;
 
@@ -268,31 +225,185 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       });
 
       onUpdateElement({
-        ...selectedElement,
+        ...selected,
         rotation: deg,
       });
     }
-  };
+  }, [getCanvasCoords, widthPx, heightPx, onUpdateElement]);
 
-  const handleEnd = () => {
+  const handleEnd = useCallback(() => {
+    dragActionRef.current = null;
+    dragStartRef.current = null;
+    activeHandleRef.current = null;
     setDragAction(null);
     setActiveHandle(null);
     setDragStart(null);
     setShowGuideX(false);
     setShowGuideY(false);
+  }, []);
+
+  // Écouteurs globaux sur window pour un déplacement fluide même hors du canvas
+  useEffect(() => {
+    if (!dragAction) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      handleMoveAt(e.clientX, e.clientY);
+    };
+
+    const handleWindowMouseUp = () => {
+      handleEnd();
+    };
+
+    const handleWindowTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        handleMoveAt(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    const handleWindowTouchEnd = () => {
+      handleEnd();
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+    window.addEventListener('touchend', handleWindowTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('touchmove', handleWindowTouchMove);
+      window.removeEventListener('touchend', handleWindowTouchEnd);
+    };
+  }, [dragAction, handleMoveAt, handleEnd]);
+
+  // Clic ou tap sur le canvas pour sélectionner ou commencer à déplacer un élément
+  const handleStartAt = (clientX: number, clientY: number) => {
+    const { x, y } = getCanvasCoords(clientX, clientY);
+
+    const clicked = [...elements].reverse().find((el) => {
+      if (!el.rotation) {
+        return (
+          x >= el.x &&
+          x <= el.x + el.width &&
+          y >= el.y &&
+          y <= el.y + el.height
+        );
+      }
+      // Support rotation pour détection du clic
+      const cx = el.x + el.width / 2;
+      const cy = el.y + el.height / 2;
+      const rad = (-el.rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const nx = cos * (x - cx) - sin * (y - cy) + cx;
+      const ny = sin * (x - cx) + cos * (y - cy) + cy;
+      return (
+        nx >= el.x &&
+        nx <= el.x + el.width &&
+        ny >= el.y &&
+        ny <= el.y + el.height
+      );
+    });
+
+    if (clicked) {
+      onSelect(clicked.id);
+      dragActionRef.current = 'move';
+      dragStartRef.current = {
+        mouseX: x,
+        mouseY: y,
+        initialEl: { ...clicked },
+      };
+      setDragAction('move');
+      setDragStart({
+        mouseX: x,
+        mouseY: y,
+        initialEl: { ...clicked },
+      });
+    } else {
+      onSelect(null);
+    }
+  };
+
+  // Clic directement sur l'élément sélectionné pour le redéplacer immédiatement
+  const handleSelectionBoxStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Si l'utilisateur clique sur une poignée de resize ou rotate, laisser la poignée gérer
+    if ((e.target as HTMLElement).closest('[data-handle]')) {
+      return;
+    }
+    e.stopPropagation();
+
+    if (!selectedElement) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const { x, y } = getCanvasCoords(clientX, clientY);
+
+    dragActionRef.current = 'move';
+    dragStartRef.current = {
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    };
+    setDragAction('move');
+    setDragStart({
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    });
+  };
+
+  // Redimensionnement
+  const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, handle: ResizeHandle) => {
+    e.stopPropagation();
+    if (!selectedElement) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const { x, y } = getCanvasCoords(clientX, clientY);
+    dragActionRef.current = 'resize';
+    activeHandleRef.current = handle;
+    dragStartRef.current = {
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    };
+    setDragAction('resize');
+    setActiveHandle(handle);
+    setDragStart({
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    });
+  };
+
+  // Rotation
+  const handleRotateStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (!selectedElement) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const { x, y } = getCanvasCoords(clientX, clientY);
+    dragActionRef.current = 'rotate';
+    dragStartRef.current = {
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    };
+    setDragAction('rotate');
+    setDragStart({
+      mouseX: x,
+      mouseY: y,
+      initialEl: { ...selectedElement },
+    });
   };
 
   return (
     <div
       ref={containerRef}
-      onMouseMove={(e) => handleMoveAt(e.clientX, e.clientY)}
-      onMouseUp={handleEnd}
-      onTouchMove={(e) => {
-        if (e.touches.length > 0) {
-          handleMoveAt(e.touches[0].clientX, e.touches[0].clientY);
-        }
-      }}
-      onTouchEnd={handleEnd}
       className="relative flex-1 flex flex-col items-center justify-center p-4 sm:p-8 overflow-auto bg-slate-900/60 select-none touch-none"
     >
       {/* Règle supérieure en millimètres */}
@@ -345,7 +456,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         {/* Boîte de sélection et poignées interactives */}
         {selectedElement && (
           <div
-            className="absolute pointer-events-auto border-2 border-indigo-500 rounded-none z-20"
+            onMouseDown={handleSelectionBoxStart}
+            onTouchStart={handleSelectionBoxStart}
+            className="absolute pointer-events-auto border-2 border-indigo-500 rounded-none z-20 cursor-move bg-indigo-500/10 select-none touch-none"
             style={{
               left: `${selectedElement.x * zoom}px`,
               top: `${selectedElement.y * zoom}px`,
@@ -357,35 +470,40 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           >
             {/* Poignée de rotation */}
             <div
+              data-handle="rotate"
               onMouseDown={handleRotateStart}
               onTouchStart={handleRotateStart}
-              className="absolute -top-7 left-1/2 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-md touch-none"
+              className="absolute -top-7 left-1/2 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-md touch-none z-30"
               title="Faire pivoter"
             >
               <RotateCw size={12} />
             </div>
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-indigo-500 pointer-events-none" />
 
-            {/* Poignées de redimensionnement (adaptées au tactile avec taille 16px/w-4) */}
+            {/* Poignées de redimensionnement */}
             <div
+              data-handle="resize-nw"
               onMouseDown={(e) => handleResizeStart(e, 'nw')}
               onTouchStart={(e) => handleResizeStart(e, 'nw')}
-              className="absolute -top-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none"
+              className="absolute -top-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
             />
             <div
+              data-handle="resize-ne"
               onMouseDown={(e) => handleResizeStart(e, 'ne')}
               onTouchStart={(e) => handleResizeStart(e, 'ne')}
-              className="absolute -top-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none"
+              className="absolute -top-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
             />
             <div
+              data-handle="resize-se"
               onMouseDown={(e) => handleResizeStart(e, 'se')}
               onTouchStart={(e) => handleResizeStart(e, 'se')}
-              className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none"
+              className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
             />
             <div
+              data-handle="resize-sw"
               onMouseDown={(e) => handleResizeStart(e, 'sw')}
               onTouchStart={(e) => handleResizeStart(e, 'sw')}
-              className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none"
+              className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
             />
           </div>
         )}
