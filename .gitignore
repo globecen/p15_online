@@ -10,12 +10,15 @@ dist-ssr/
 *.local
 *.tsbuildinfo
 
-# SQLite Database & Storage
-data/
+# SQLite Database & Storage (root data directory only)
+/data/
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
+
+# Ensure source data files are always tracked
+!src/data/
 
 # Environment Variables
 .env
