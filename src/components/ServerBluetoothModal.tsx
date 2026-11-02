@@ -352,7 +352,7 @@ export const ServerBluetoothModal: React.FC<ServerBluetoothModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-400">
                       {serverStatus?.connected
-                        ? `Adresse : ${serverStatus.address} ${serverStatus.isSimulation ? '(Mode Simulation/Prêt)' : ''}`
+                        ? `Adresse : ${serverStatus.address}`
                         : 'Le conteneur Docker gère la liaison BLE via Bleak'}
                     </div>
                   </div>

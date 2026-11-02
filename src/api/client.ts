@@ -10,7 +10,6 @@ export interface ServerPrinterStatus {
   name: string;
   address: string;
   batteryLevel?: number;
-  isSimulation?: boolean;
 }
 
 export interface DiscoveredBleDevice {

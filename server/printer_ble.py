@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import math
 import time
 from typing import Optional, Callable, Dict, Any, List
 
@@ -35,11 +34,10 @@ class PristarP15Driver:
     self.credits = 0
     self.last_credit_time = time.time()
     self.print_ack_event = asyncio.Event()
-    self.is_simulation = False
     self._lock = asyncio.Lock()
 
   async def scan(self, timeout: int = 5) -> List[Dict[str, Any]]:
-    """Scanne les périphériques Bluetooth à proximité via Bleak."""
+    """Scanne les périphériques Bluetooth à proximité via Bleak. Retourne uniquement les vrais périphériques détectés."""
     try:
       from bleak import BleakScanner
       devices = await BleakScanner.discover(timeout=timeout)
@@ -57,14 +55,12 @@ class PristarP15Driver:
       results.sort(key=lambda x: (not x["is_p15"], x["name"]))
       return results
     except Exception as e:
-      logger.warning(f"Erreur scan Bluetooth (mode simulation possible): {e}")
-      return [
-        {"address": "SIMULATED-P15-01", "name": "Pristar P15 (Simulation)", "rssi": -55, "is_p15": True}
-      ]
+      logger.warning(f"Erreur scan Bluetooth réel : {e}")
+      return []
 
   async def auto_connect(self, preferred_address: Optional[str] = None) -> bool:
-    """Tente une auto-connexion : à l'adresse préférée si fournie, sinon scan pour trouver une P15, sinon mode simulation."""
-    if self.connected:
+    """Tente une auto-connexion réelle : à l'adresse préférée si fournie, sinon scan pour trouver une P15 réelle."""
+    if self.connected and self.client:
       return True
 
     target_addr = preferred_address or config.PRINTER_MAC
@@ -77,22 +73,21 @@ class PristarP15Driver:
 
     # Essayer de scanner si Bleak / Bluetooth est disponible sur l'hôte
     try:
-      logger.info("Scan automatique pour trouver une imprimante Pristar P15...")
-      devices = await self.scan(timeout=3)
-      p15_devices = [d for d in devices if d.get("is_p15") and not d["address"].startswith("SIMULATED")]
+      logger.info("Scan automatique pour trouver une imprimante Pristar P15 réelle...")
+      devices = await self.scan(timeout=4)
+      p15_devices = [d for d in devices if d.get("is_p15")]
       if p15_devices:
         best = p15_devices[0]
-        logger.info(f"Imprimante détectée : {best['name']} ({best['address']}). Connexion...")
+        logger.info(f"Imprimante réelle détectée : {best['name']} ({best['address']}). Connexion...")
         return await self.connect(best["address"])
     except Exception as e:
       logger.warning(f"Scan automatique non concluant: {e}")
 
-    # Fallback automatique en mode simulation/prêt si pas de Bluetooth hôte disponible
-    logger.info("Activation du mode connecté automatique (Simulation/Prêt)...")
-    return await self.connect("SIMULATED-P15-01")
+    logger.info("Aucune imprimante P15 réelle trouvée.")
+    return False
 
   async def connect(self, address: str) -> bool:
-    """Connecte le serveur Docker à la Pristar P15."""
+    """Connecte le serveur Docker à la Pristar P15 réelle."""
     if address == "auto" or not address:
       return await self.auto_connect()
 
@@ -100,26 +95,16 @@ class PristarP15Driver:
       if self.connected:
         await self.disconnect()
 
-      if address.startswith("SIMULATED"):
-        self.is_simulation = True
-        self.connected = True
-        self.device_name = "Pristar P15 (Simulé)"
-        self.device_address = address
-        self.battery_level = 88
-        logger.info("Connecté en mode simulation.")
-        return True
-
       try:
         from bleak import BleakClient
 
-        logger.info(f"Connexion BLE à {address}...")
+        logger.info(f"Connexion BLE réelle à {address}...")
         self.client = BleakClient(address, timeout=12.0)
         await self.client.connect()
 
         self.device_address = address
         self.device_name = getattr(self.client, "name", "Pristar P15") or "Pristar P15"
         self.connected = True
-        self.is_simulation = False
 
         # Configuration notifications RX & CX
         await self.client.start_notify(CHAR_RX, self._handle_rx)
@@ -137,7 +122,7 @@ class PristarP15Driver:
         return True
 
       except Exception as e:
-        logger.error(f"Échec de connexion Bluetooth à {address}: {e}")
+        logger.error(f"Échec de connexion Bluetooth réelle à {address}: {e}")
         self.connected = False
         self.client = None
         raise
@@ -164,7 +149,7 @@ class PristarP15Driver:
       self.last_credit_time = time.time()
 
   async def query_battery(self):
-    if self.connected and self.client and not self.is_simulation:
+    if self.connected and self.client:
       try:
         cmd = bytearray([0x10, 0xff, 0x50, 0xf1])
         await self.client.write_gatt_char(CHAR_TX, cmd, response=False)
@@ -181,22 +166,13 @@ class PristarP15Driver:
     copies: int = 1,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
   ) -> bool:
-    """Envoie une tâche d'impression complète à l'imprimante."""
-    if not self.connected:
+    """Envoie une tâche d'impression réelle à l'imprimante Bluetooth."""
+    if not self.connected or not self.client:
       logger.info("Imprimante non connectée lors de l'impression, tentative d'auto-connexion...")
       await self.auto_connect()
 
-    if not self.connected:
-      raise RuntimeError("Impossible d'établir la connexion avec la Pristar P15.")
-
-    if self.is_simulation:
-      logger.info(f"[SIMULATION] Impression de {copies} copie(s)...")
-      for c in range(1, copies + 1):
-        for pct in range(0, 101, 20):
-          if progress_callback:
-            progress_callback(c, copies, f"Copie {c}/{copies} ({pct}%)")
-          await asyncio.sleep(0.08)
-      return True
+    if not self.connected or not self.client:
+      raise RuntimeError("Imprimante non connectée. Impossible d'imprimer.")
 
     # 1. Construction du préambule
     # Wakeup (15 zéros), SetThickness (10 FF 10 00 TT), SetDensity (1F 70 02 DD), Enable (10 FF F1 02)
@@ -222,8 +198,6 @@ class PristarP15Driver:
 
     # Fin de tâche : 10 FF F1 45
     bulk.extend([0x10, 0xff, 0xf1, 0x45])
-
-    total_bulk_len = len(bulk)
 
     for copy_idx in range(1, copies + 1):
       if progress_callback:
@@ -255,6 +229,9 @@ class PristarP15Driver:
 
   async def _send_chunked(self, data: bytes, progress: Optional[Callable[[int, int], None]] = None):
     """Envoi avec contrôle de flux par crédits (Flow Control)."""
+    if not self.client:
+      raise RuntimeError("Client Bluetooth déconnecté pendant l'envoi.")
+
     offset = 0
     total = len(data)
     self.last_credit_time = time.time()
@@ -284,7 +261,7 @@ class PristarP15Driver:
           pass
       self.client = None
       self.connected = False
-      self.is_simulation = False
       self.battery_level = None
+      self.device_address = ""
 
 printer_driver = PristarP15Driver()

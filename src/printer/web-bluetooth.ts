@@ -66,14 +66,21 @@ export class WebBluetoothPrinterManager {
     try {
       this.updateStatus('connecting');
 
+      const allServices = [
+        BLE_SERVICES.PRIMARY,
+        BLE_SERVICES.FALLBACK,
+        BLE_SERVICES.TI,
+        BLE_SERVICES.AI_THINKER,
+      ];
+
       const options: RequestDeviceOptions = acceptAllDevices
         ? {
             acceptAllDevices: true,
-            optionalServices: [BLE_SERVICES.PRIMARY, BLE_SERVICES.FALLBACK],
+            optionalServices: allServices,
           }
         : {
             filters: KNOWN_DEVICE_PREFIXES.map((prefix) => ({ namePrefix: prefix })),
-            optionalServices: [BLE_SERVICES.PRIMARY, BLE_SERVICES.FALLBACK],
+            optionalServices: allServices,
           };
 
       this.device = await navigator.bluetooth.requestDevice(options);
@@ -85,33 +92,73 @@ export class WebBluetoothPrinterManager {
       });
 
       // Connexion au serveur GATT
-      this.server = await this.device.gatt?.connect() || null;
+      this.server = (await this.device.gatt?.connect()) || null;
       if (!this.server) {
-        throw new Error('Impossible d\'ouvrir la session GATT avec l\'imprimante');
+        throw new Error("Impossible d'ouvrir la session GATT avec l'imprimante");
       }
 
-      // Recherche du service primaire ou fallback
+      // Recherche du service supporté
       let service: BluetoothRemoteGATTService | null = null;
-      try {
-        service = await this.server.getPrimaryService(BLE_SERVICES.PRIMARY);
-      } catch {
-        // Essai du service alternatif
+      for (const sUuid of allServices) {
         try {
-          service = await this.server.getPrimaryService(BLE_SERVICES.FALLBACK);
+          service = await this.server.getPrimaryService(sUuid);
+          if (service) break;
         } catch {
-          throw new Error('Service BLE d\'impression Marklife/P15 introuvable.');
+          // essayer le suivant
         }
       }
 
+      if (!service) {
+        throw new Error("Service Bluetooth d'impression P15 introuvable sur cet appareil.");
+      }
+
       // Récupération des caractéristiques TX, RX et CX
-      this.txChar = await service.getCharacteristic(BLE_CHARACTERISTICS.TX);
-      this.rxChar = await service.getCharacteristic(BLE_CHARACTERISTICS.RX);
+      let tx: BluetoothRemoteGATTCharacteristic | null = null;
+      let rx: BluetoothRemoteGATTCharacteristic | null = null;
+      let cx: BluetoothRemoteGATTCharacteristic | null = null;
 
       try {
-        this.cxChar = await service.getCharacteristic(BLE_CHARACTERISTICS.CX);
+        tx = await service.getCharacteristic(BLE_CHARACTERISTICS.TX);
       } catch {
-        this.cxChar = null;
+        try {
+          tx = await service.getCharacteristic(BLE_CHARACTERISTICS.FALLBACK_TX);
+        } catch {}
       }
+
+      try {
+        rx = await service.getCharacteristic(BLE_CHARACTERISTICS.RX);
+      } catch {
+        try {
+          rx = await service.getCharacteristic(BLE_CHARACTERISTICS.FALLBACK_RX);
+        } catch {}
+      }
+
+      try {
+        cx = await service.getCharacteristic(BLE_CHARACTERISTICS.CX);
+      } catch {}
+
+      // Fallback dynamique si non trouvé par UUID exact
+      if (!tx || !rx) {
+        try {
+          const chars = await service.getCharacteristics();
+          for (const c of chars) {
+            if (!tx && (c.properties.writeWithoutResponse || c.properties.write)) {
+              tx = c;
+            }
+            if (!rx && (c.properties.notify || c.properties.indicate)) {
+              rx = c;
+            }
+          }
+        } catch {}
+      }
+
+      if (!tx) {
+        throw new Error("Canal d'envoi de données (TX) introuvable sur l'imprimante.");
+      }
+
+      this.txChar = tx;
+      this.rxChar = rx;
+      this.cxChar = cx;
 
       // Initialiser le contrôleur de flux
       this.flowController = new BleFlowController(this.txChar, PACKET_SIZE);

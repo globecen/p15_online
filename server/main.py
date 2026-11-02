@@ -219,10 +219,9 @@ async def delete_template(template_id: str, user: dict = Depends(get_current_use
 async def get_printer_status(user: dict = Depends(get_current_user)):
   return {
     "connected": printer_driver.connected,
-    "name": printer_driver.device_name,
+    "name": printer_driver.device_name if printer_driver.connected else "Déconnectée",
     "address": printer_driver.device_address,
     "batteryLevel": printer_driver.battery_level,
-    "isSimulation": printer_driver.is_simulation,
   }
 
 @app.post("/api/printer/scan")
@@ -232,17 +231,29 @@ async def scan_printers(timeout: int = 5, user: dict = Depends(get_current_user)
 
 @app.post("/api/printer/connect")
 async def connect_printer(req: ConnectRequest, user: dict = Depends(get_current_user)):
-  if req.address in ("auto", "", None):
-    success = await printer_driver.auto_connect()
-  else:
-    success = await printer_driver.connect(req.address)
-  return {
-    "success": success,
-    "name": printer_driver.device_name,
-    "address": printer_driver.device_address,
-    "batteryLevel": printer_driver.battery_level,
-    "isSimulation": printer_driver.is_simulation,
-  }
+  try:
+    if req.address in ("auto", "", None):
+      success = await printer_driver.auto_connect()
+      if not success:
+        raise HTTPException(
+          status_code=status.HTTP_404_NOT_FOUND,
+          detail="Aucune imprimante Pristar P15 trouvée à proximité.",
+        )
+    else:
+      success = await printer_driver.connect(req.address)
+    return {
+      "success": success,
+      "name": printer_driver.device_name,
+      "address": printer_driver.device_address,
+      "batteryLevel": printer_driver.battery_level,
+    }
+  except HTTPException:
+    raise
+  except Exception as e:
+    raise HTTPException(
+      status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+      detail=f"Erreur connexion BLE : {str(e)}",
+    )
 
 @app.post("/api/printer/disconnect")
 async def disconnect_printer(user: dict = Depends(get_current_user)):

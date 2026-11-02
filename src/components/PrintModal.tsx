@@ -419,19 +419,19 @@ export const PrintModal: React.FC<PrintModalProps> = ({
               <div className="flex items-center gap-2.5">
                 <div
                   className={`w-3 h-3 rounded-full shrink-0 ${
-                    serverStatus?.connected ? 'bg-emerald-500 shadow-md shadow-emerald-500/50' : 'bg-emerald-400 animate-pulse'
+                    serverStatus?.connected ? 'bg-emerald-500 shadow-md shadow-emerald-500/50' : 'bg-rose-500'
                   }`}
                 />
                 <div>
                   <div className="text-xs font-semibold text-white">
                     {serverStatus?.connected
-                      ? `Prêt sur Serveur : ${serverStatus.name}`
-                      : 'Serveur Docker prêt (Connexion auto au lancement)'}
+                      ? `Connecté sur Serveur : ${serverStatus.name}`
+                      : 'Serveur Docker : Déconnecté'}
                   </div>
                   <div className="text-[11px] text-slate-400">
                     {serverStatus?.connected
-                      ? `Adresse : ${serverStatus.address} ${serverStatus.isSimulation ? '(Mode Simulation)' : ''}`
-                      : 'L\'envoi se fait via le serveur Docker Bluetooth'}
+                      ? `Adresse : ${serverStatus.address}`
+                      : 'Aucune imprimante connectée au serveur'}
                   </div>
                 </div>
               </div>

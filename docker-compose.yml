@@ -19,6 +19,5 @@ services:
     volumes:
       # Données persistantes (modèles personnalisés, historique)
       - ./data:/app/data
-      # Pour un serveur Linux avec Bluetooth BlueZ (Raspberry Pi, Debian, Ubuntu, etc.) :
-      # Décommentez la ligne ci-dessous pour lier le Bluetooth de l'hôte Linux au conteneur
-      # - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      # Prise en charge du Bluetooth hôte Linux (BlueZ / D-Bus)
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
