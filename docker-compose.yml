@@ -1,0 +1,22 @@
+services:
+  pristar-p15-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pristar-p15-studio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=pristar123
+      - SECRET_KEY=cle-secrete-a-personnaliser-pristar-p15-2026
+      # Adresse MAC Bluetooth optionnelle pour auto-connexion au démarrage
+      # - PRINTER_MAC=AA:BB:CC:DD:EE:FF
+    volumes:
+      # Données persistantes (modèles personnalisés, historique)
+      - ./data:/app/data
+      # Pour un serveur Linux avec Bluetooth BlueZ (Raspberry Pi, Debian, Ubuntu, etc.) :
+      # Décommentez la ligne ci-dessous pour lier le Bluetooth de l'hôte Linux au conteneur
+      # - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
