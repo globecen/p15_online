@@ -65,10 +65,15 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      let errorDetail = 'Une erreur est survenue';
+      let errorDetail = `Erreur HTTP ${response.status}`;
       try {
-        const errorJson = await response.json();
-        errorDetail = errorJson.detail || errorDetail;
+        const text = await response.text();
+        try {
+          const errorJson = JSON.parse(text);
+          errorDetail = errorJson.detail || errorJson.message || text;
+        } catch {
+          if (text) errorDetail = text;
+        }
       } catch {}
       throw new Error(errorDetail);
     }
