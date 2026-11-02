@@ -37,6 +37,9 @@ class PristarP15Driver:
     self.print_ack_event = asyncio.Event()
     self._lock = asyncio.Lock()
     self._device_cache: Dict[str, Any] = {}
+    self.tx_char = None
+    self.rx_char = None
+    self.cx_char = None
 
   async def scan(self, timeout: int = 5) -> List[Dict[str, Any]]:
     """Scanne les périphériques Bluetooth à proximité via Bleak. Retourne uniquement les vrais périphériques détectés."""
@@ -168,16 +171,57 @@ class PristarP15Driver:
       self.device_name = getattr(self.client, "name", "Pristar P15") or getattr(ble_device, "name", "Pristar P15") or "Pristar P15"
       self.connected = True
 
-      # Configuration notifications RX & CX
+      # Découverte obligatoire des services GATT (résout l'erreur "Service Discovery has not been performed yet")
+      logger.info("Découverte des services GATT en cours...")
       try:
-        await self.client.start_notify(CHAR_RX, self._handle_rx)
+        await self.client.get_services()
+      except Exception as svc_err:
+        logger.warning(f"get_services() exception non critique : {svc_err}")
+
+      # Résolution dynamique des caractéristiques TX, RX et CX
+      self.tx_char = None
+      self.rx_char = None
+      self.cx_char = None
+
+      if self.client.services:
+        for s in self.client.services:
+          for c in s.characteristics:
+            u = c.uuid.lower()
+            if "ff02" in u or "8841-43f4" in u:
+              self.tx_char = c
+            elif "ff01" in u or "1e4d-4bd9" in u:
+              self.rx_char = c
+            elif "ff03" in u:
+              self.cx_char = c
+
+        # Fallback par propriétés si non trouvé par UUID exact
+        if not self.tx_char or not self.rx_char:
+          for s in self.client.services:
+            for c in s.characteristics:
+              props = [p.lower() for p in c.properties]
+              if not self.tx_char and ("write-without-response" in props or "write" in props):
+                self.tx_char = c
+              if not self.rx_char and ("notify" in props or "indicate" in props):
+                self.rx_char = c
+
+      tx_str = self.tx_char.uuid if self.tx_char else CHAR_TX
+      rx_str = self.rx_char.uuid if self.rx_char else CHAR_RX
+      logger.info(f"Canaux configurés -> TX: {tx_str}, RX: {rx_str}")
+
+      # Configuration notifications RX & CX
+      rx_target = self.rx_char or CHAR_RX
+      try:
+        await self.client.start_notify(rx_target, self._handle_rx)
       except Exception as rx_err:
         logger.warning(f"Notification RX non activée : {rx_err}")
 
-      try:
-        await self.client.start_notify(CHAR_CX, self._handle_cx)
-        await asyncio.sleep(0.5)
-      except Exception:
+      if self.cx_char:
+        try:
+          await self.client.start_notify(self.cx_char, self._handle_cx)
+          await asyncio.sleep(0.5)
+        except Exception:
+          self.credits = 4
+      else:
         self.credits = 4
 
       # Requête de batterie
@@ -210,7 +254,8 @@ class PristarP15Driver:
     if self.connected and self.client:
       try:
         cmd = bytearray([0x10, 0xff, 0x50, 0xf1])
-        await self.client.write_gatt_char(CHAR_TX, cmd, response=False)
+        char_tx = self.tx_char or CHAR_TX
+        await self.client.write_gatt_char(char_tx, cmd, response=False)
       except Exception:
         pass
 
@@ -302,7 +347,8 @@ class PristarP15Driver:
 
       if self.credits > 0:
         chunk = data[offset : offset + PACKET_SIZE]
-        await self.client.write_gatt_char(CHAR_TX, chunk, response=False)
+        char_tx = self.tx_char or CHAR_TX
+        await self.client.write_gatt_char(char_tx, chunk, response=False)
         self.credits -= 1
         offset += len(chunk)
         if progress:
@@ -321,5 +367,8 @@ class PristarP15Driver:
       self.connected = False
       self.battery_level = None
       self.device_address = ""
+      self.tx_char = None
+      self.rx_char = None
+      self.cx_char = None
 
 printer_driver = PristarP15Driver()

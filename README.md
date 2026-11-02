@@ -99,10 +99,15 @@ Copiez l'adresse MAC affichée (ex: `AA:BB:CC:DD:EE:FF`) et ajoutez-la dans `doc
 
 ## ❓ Dépannage & Bonnes Pratiques
 
-- **L'imprimante n'apparaît pas lors de la recherche Bluetooth :**
-  1. **Déconnexion de l'application officielle :** La Pristar P15 n'accepte **qu'une seule connexion active à la fois**. Si l'application officielle *Marklife* est ouverte sur votre téléphone à proximité, fermez-la complètement.
-  2. **Option "Tous les appareils" :** Dans la fenêtre Bluetooth du Studio, cochez *« Afficher tous les appareils Bluetooth »* si le filtre de nom masque votre imprimante.
-  3. **Navigateurs recommandés :** Utilisez **Google Chrome** ou **Microsoft Edge** sur ordinateur et Android.
+- **L'imprimante n'apparaît pas ou erreur `br-connection-profile-unavailable` :**
+  1. **Mode BLE pur sur Linux :** Si vous obtenez `br-connection-profile-unavailable`, forcez BlueZ en mode BLE :
+     ```bash
+     sudo sed -i 's/#\?ControllerMode\s*=.*/ControllerMode = le/' /etc/bluetooth/main.conf
+     sudo systemctl restart bluetooth
+     ```
+  2. **Déconnexion de l'application officielle :** La Pristar P15 n'accepte **qu'une seule connexion active à la fois**. Si l'application officielle *Marklife* est ouverte sur votre téléphone à proximité, fermez-la complètement.
+  3. **Option "Tous les appareils" :** Dans la fenêtre Bluetooth du Studio, cochez *« Afficher tous les appareils Bluetooth »* si le filtre de nom masque votre imprimante.
+  4. **Navigateurs recommandés :** Utilisez **Google Chrome** ou **Microsoft Edge** sur ordinateur et Android.
 - **Docker sous Windows :**
   Docker Desktop sous Windows ne partage pas le Bluetooth de l'ordinateur avec les conteneurs Linux. Utilisez simplement le mode **Bluetooth Direct** dans l'application web pour imprimer en direct depuis votre navigateur !
 
