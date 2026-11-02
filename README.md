@@ -1,103 +1,110 @@
-# Pristar P15 Label Studio — Serveur Docker & Impression Bluetooth
+# Pristar P15 Label Studio — Studio d'Impression & Design Bluetooth
 
-Application web moderne, sécurisée et complète pour concevoir des étiquettes sur-mesure et imprimer directement sur votre imprimante thermique portable **Pristar P15** (et modèles compatibles Marklife/Deli) via **Bluetooth Low Energy (BLE)** depuis votre serveur **Docker**.
+Application web moderne, réactive et sécurisée pour concevoir des étiquettes personnalisées et lancer des impressions sur votre imprimante thermique portable **Pristar P15** (et modèles compatibles Marklife/Deli/LP15).
+
+L'application prend en charge le **Bluetooth Direct (Web BLE)** depuis votre navigateur ou smartphone, ainsi que la liaison **Bluetooth Serveur Docker (Linux/BlueZ)**.
 
 ---
 
 ## ✨ Fonctionnalités Principales
 
-- 🐳 **Exécution 100% Conteneurisée (Docker)** : L'application et le pilote Bluetooth BLE s'exécutent dans un conteneur Docker relié au Bluetooth du serveur hôte via D-Bus / BlueZ.
-- 🔒 **Sécurité & Authentification** : Accès protégé par identifiant et mot de passe (tokens JWT signés, mots de passe hashés avec sel PBKDF2).
-- 🎨 **Concepteur Visuel WYSIWYG en Temps Réel** :
-  - Dimensions physiques exactes en millimètres (12x30, 12x40, 14x30, 14x40, 15x50 mm ou sur-mesure).
-  - Déplacement, redimensionnement avec 8 poignées, rotation libre ou crantée, guides d'aimantation au centre.
-  - Annuler / Rétablir (Undo / Redo), Zoom 50% à 300%, règles graduées en mm.
-- 😃 **Liste Complète de Visuels Imprimables** :
-  - **Sélecteur d'Emojis complet** : Recherche par mots-clés français et catégories (Smileys, Cuisine & Frais, Tech & Câbles, Maison & Rangement, Alertes & Symboles).
-  - **Bibliothèque d'Icônes vectorielles thermiques** : Plus de 60 pictogrammes ultra-nets dessinés spécialement pour les étiqueteuses 12-15mm.
-  - **Générateur de Codes-Barres** : Code 128, EAN-13, EAN-8, Code 39, ITF-14 avec texte sous le code.
-  - **Générateur de QR Codes** : Liens URL, WiFi direct automatique, coordonnées ou texte brut.
-  - **Formes & Cadres** : Cadres doubles décoratifs, rectangles arrondis, lignes de séparation, cercles.
-  - **Import d'Images & Logos** : Téléversez n'importe quelle photo ou logo avec réglage en direct du contraste, de la luminosité et du tramage Floyd-Steinberg ou Seuil net.
-- 💾 **Interface de Création de Ses Propres Modèles** :
-  - Bouton « Sauvegarder Modèle » pour enregistrer vos créations dans la base de données persistante SQLite.
-  - Galerie « Mes Modèles » avec vignettes miniatures pour recharger, dupliquer ou modifier vos étiquettes à tout moment.
-- 🖨️ **Pilote Matériel Pristar P15 Haute Fidélité** :
-  - Protocole binaire L11 (Marklife P15 / P15R / P7).
-  - Contrôle de flux par crédits (Credit-based Flow Control) cadencé à 30 ms avec paquets de 95 octets (évite tout débordement de mémoire tampon de l'imprimante).
-  - Réglage de la densité thermique (1: Clair, 2: Normal, 3: Foncé) et du type de ruban (découpe Gap ou rouleau continu).
-  - Détection automatique de la batterie et des alertes de statut (capot ouvert, papier épuisé, surchauffe).
+- 🔐 **Sécurité & Première Connexion Personnalisée** :
+  - **Aucun mot de passe par défaut imposé** : lors de la première connexion, un assistant de configuration vous permet de définir votre propre identifiant et mot de passe administrateur sécurisé.
+  - Sessions sécurisées par tokens JWT signés et mots de passe protégés par hachage cryptographique PBKDF2-HMAC-SHA256 avec sel unique.
+- 📱 **Interface 100% Adaptée aux Smartphones & Tablettes** :
+  - Conception entièrement responsive : fonctionne aussi bien sur grand écran d'ordinateur que sur smartphone (Android / iPhone).
+  - Barre d'actions tactile en bas d'écran (`Ajouter`, `Format & Options`, `Modèles`, `Imprimer`).
+  - Volets coulissants et manipulation tactile directe sur le canevas (déplacement, redimensionnement avec poignées tactiles, rotation).
+- 🖨️ **Double Mode Bluetooth (Web BLE & Serveur Docker)** :
+  - **Bluetooth Direct (Recommandé sur PC Windows & Mobile)** : connecte directement votre navigateur (Google Chrome, Microsoft Edge ou Opera) à la Pristar P15 sans barrière de virtualisation Docker.
+  - **Bluetooth Serveur Docker** : pour les serveurs Linux hôtes ou Raspberry Pi utilisant BlueZ / D-Bus.
+  - **Auto-connexion & Reconnexion automatique** : le bouton d'impression ne se bloque jamais ; la liaison s'établit automatiquement à la volée.
+- 🎨 **Éditeur Visuel WYSIWYG en Temps Réel** :
+  - Formats standards Pristar P15 : 40×12 mm, 30×12 mm, 22×12 mm, 40×14 mm, 30×14 mm, 50×15 mm, 60×15 mm ou dimensions libres.
+  - Rendu haute fidélité à 203 DPI (8 points par millimètre).
+  - Annuler / Rétablir (Undo / Redo), Zoom adaptatif de 50% à 300%, règles graduées en millimètres.
+- 😃 **Bibliothèque Complète de Visuels Imprimables** :
+  - **Sélecteur d'Emojis Universel** : catalogue complet classé par catégories (Smileys, Mains & Cœurs, Cuisine, Objets, Symboles, etc.) + barre de recherche en français + champ libre pour coller n'importe quel emoji.
+  - **60+ Icônes Vectorielles Thermiques** : pictogrammes nets optimisés pour la gravure 1-bit sans perte de définition.
+  - **Générateur de Codes-Barres** : Code 128, EAN-13, EAN-8, Code 39, ITF-14.
+  - **Générateur de QR Codes** : Liens URL, configuration WiFi direct, cartes de visite, texte brut.
+  - **Formes & Cadres** : Cadres doubles décoratifs, rectangles arrondis, cercles, séparateurs horizontaux et verticaux.
+  - **Import d'Images & Logos** : Tramage Floyd-Steinberg ou seuil net avec réglage de contraste et de luminosité en temps réel.
+- 💾 **Créateur & Galerie de Modèles (« Mes Modèles »)** :
+  - Enregistrez vos designs sur la base de données persistante SQLite en un clic.
+  - Retrouvez vos modèles avec aperçus visuels, rechargez-les ou modifiez-les à tout moment.
 
 ---
 
 ## 🚀 Démarrage Rapide avec Docker
 
-### 1. Prérequis
-- Un serveur Linux (Debian, Ubuntu, Raspberry Pi OS, etc.) avec Bluetooth BLE activé.
-- Docker et Docker Compose installés.
-- Le service Bluetooth de l'hôte actif : `sudo systemctl status bluetooth`.
-
-### 2. Lancement en une commande
-Depuis le dossier du projet :
+### 1. Lancement du conteneur
+Depuis la racine du projet :
 
 ```bash
 docker compose up -d --build
 ```
 
-L'application est immédiatement accessible dans votre navigateur web sur :
-👉 **`http://<IP_DE_VOTRE_SERVEUR>:8080`**
+L'application démarre immédiatement sur le port `8080` :
+👉 **`http://localhost:8080`** (ou `http://<IP_DE_VOTRE_SERVEUR>:8080`)
 
-### 3. Identifiants par défaut
-- **Identifiant** : `admin`
-- **Mot de passe** : `pristar123`
+### 2. Première Connexion (Initialisation)
+À la première ouverture :
+1. L'écran **« Initialisation du Studio — Première Connexion »** s'affiche automatiquement.
+2. Choisissez votre **identifiant administrateur** (ex: `admin`).
+3. Définissez et confirmez votre **mot de passe personnel**.
+4. Cliquez sur **« Initialiser et Ouvrir le Studio »** : votre compte est créé et vous accédez directement au studio.
 
 ---
 
 ## ⚙️ Configuration & Variables d'Environnement
 
-Vous pouvez personnaliser les paramètres dans le fichier `docker-compose.yml` ou dans un fichier `.env` :
+Le fichier `docker-compose.yml` (ou un fichier `.env`) permet d'ajuster les réglages :
 
 | Variable | Description | Valeur par défaut |
 |---|---|---|
 | `PORT` | Port d'écoute du serveur web | `8080` |
-| `ADMIN_USERNAME` | Identifiant de connexion | `admin` |
-| `ADMIN_PASSWORD` | Mot de passe de connexion | `pristar123` |
-| `SECRET_KEY` | Clé secrète de signature des tokens de session | `pristar-p15-secure-docker-secret-key-2026` |
-| `PRINTER_MAC` | *(Optionnel)* Adresse MAC Bluetooth de la P15 pour connexion automatique | *(Vide)* |
+| `ADMIN_USERNAME` | Identifiant administrateur par défaut | `admin` |
+| `ADMIN_PASSWORD` | *(Optionnel)* Mot de passe prédéfini (si non renseigné, l'initialisation se fait via l'interface web) | *(Vide)* |
+| `SECRET_KEY` | Clé secrète de signature des tokens JWT | `pristar-p15-secure-docker-secret-key-2026` |
+| `PRINTER_MAC` | *(Optionnel)* Adresse MAC Bluetooth pour auto-connexion serveur | *(Vide)* |
 
 ---
 
-## 📱 Utilisation
+## 📡 Connexion Bluetooth avec la Pristar P15
 
-1. **Connexion au Studio** : Entrez votre identifiant et mot de passe.
-2. **Jumelage Bluetooth avec la P15** :
-   - Allumez votre Pristar P15 (maintenez le bouton 3 secondes jusqu'au bip).
-   - Dans la barre supérieure, cliquez sur le bouton **« Bluetooth Docker »**.
-   - Cliquez sur **« Lancer un Scan BLE »**.
-   - Cliquez sur **« Connecter »** en face de votre imprimante `P15`.
-3. **Création d'Étiquette** :
-   - Ajoutez des textes, des emojis, des icônes, un QR code ou un code-barres depuis le panneau de gauche.
-   - Ajustez la typographie, la taille et le centrage dans le panneau de droite.
-4. **Enregistrer comme modèle personnalisé** :
-   - Cliquez sur le bouton orange **« Sauvegarder Modèle »** dans la barre supérieure pour nommer votre création et la retrouver dans la galerie.
-5. **Impression** :
-   - Cliquez sur **« Imprimer »**.
-   - Choisissez le nombre d'exemplaires et la densité désirée.
-   - Validez : le conteneur Docker transmet les trames thermiques en direct à la Pristar P15 !
+### Cas 1 : Vous utilisez un PC (Windows, Mac) ou un Smartphone Android/iOS (Recommandé)
+1. Allumez votre **Pristar P15** (maintenez le bouton 2 secondes jusqu'au voyant allumé).
+2. Dans la barre supérieure, cliquez sur **« Connecter P15 »** (ou ouvrez le menu Bluetooth).
+3. Dans l'onglet **« Bluetooth Direct (PC / Mobile) »**, cliquez sur **`🔍 Rechercher et Connecter ma Pristar P15`**.
+4. La fenêtre native de sélection Bluetooth de votre navigateur s'ouvre : sélectionnez votre imprimante (**`P15`**, **`Marklife`** ou **`Pristar`**) et cliquez sur **Associer**.
+5. Votre imprimante est connectée et affiche son niveau de batterie !
+
+*(Note pour iPhone/iPad : utilisez l'application gratuite **Bluefy** qui supporte le Web Bluetooth).*
+
+### Cas 2 : Vous hébergez Docker sur un serveur Linux dédié ou un Raspberry Pi
+Pour que le conteneur Docker gère lui-même la puce Bluetooth matérielle de l'hôte Linux, décommentez dans `docker-compose.yml` :
+
+```yaml
+volumes:
+  - ./data:/app/data
+  - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+```
 
 ---
 
-## 🛠️ Dépannage Bluetooth sous Linux / Docker
+## ❓ Dépannage & Bonnes Pratiques
 
-- **Le conteneur ne voit pas les périphériques Bluetooth** :
-  Vérifiez que le socket D-Bus est bien partagé dans `docker-compose.yml` :
-  ```yaml
-  volumes:
-    - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
-  network_mode: host
-  ```
-- **L'imprimante n'apparaît pas lors du scan** :
-  1. Assurez-vous que l'application mobile *Marklife* sur votre smartphone est complètement fermée (la P15 n'autorise qu'un seul client Bluetooth connecté à la fois).
-  2. Vérifiez que le Bluetooth de l'hôte Linux est débloqué : `sudo rfkill unblock bluetooth`.
-- **Mode Test / Simulation** :
-  Si vous développez sur une machine sans Bluetooth BLE physique, activez le bouton *« Activer le mode simulation »* dans la fenêtre Bluetooth pour tester l'intégralité du workflow sans matériel.
+- **L'imprimante n'apparaît pas lors de la recherche Bluetooth :**
+  1. **Déconnexion de l'application officielle :** La Pristar P15 n'accepte **qu'une seule connexion active à la fois**. Si l'application officielle *Marklife* est ouverte sur votre téléphone à proximité, fermez-la complètement.
+  2. **Option "Tous les appareils" :** Dans la fenêtre Bluetooth du Studio, cochez *« Afficher tous les appareils Bluetooth »* si le filtre de nom masque votre imprimante.
+  3. **Navigateurs recommandés :** Utilisez **Google Chrome** ou **Microsoft Edge** sur ordinateur et Android.
+- **Docker sous Windows :**
+  Docker Desktop sous Windows ne partage pas le Bluetooth de l'ordinateur avec les conteneurs Linux. Utilisez simplement le mode **Bluetooth Direct** dans l'application web pour imprimer en direct depuis votre navigateur !
+
+---
+
+## 📄 Licence & Crédits
+
+Studio conçu pour l'imprimante d'étiquettes **Pristar P15** (protocole binaire L11 / Marklife).
+Développé avec React, TypeScript, Tailwind CSS, FastAPI et Python Bleak.
