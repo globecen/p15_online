@@ -11,7 +11,8 @@ DB_PATH = DATA_DIR / "p15_studio.db"
 
 # Sécurité & Authentification
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "pristar123")
+# Mot de passe admin optionnel par variable (si vide, l'application demandera de le définir à la 1ère connexion)
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SECRET_KEY = os.getenv("SECRET_KEY", "pristar-p15-secure-docker-secret-key-2026")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7 # 7 jours de validité

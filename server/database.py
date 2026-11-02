@@ -50,18 +50,45 @@ async def init_db():
       )
     """)
 
-    # Créer le compte admin s'il n'existe pas encore
-    cursor = await db.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
-    row = await cursor.fetchone()
-    if not row:
-      pwd_hash, salt = hash_password(ADMIN_PASSWORD)
-      now = datetime.now(timezone.utc).isoformat()
-      await db.execute(
-        "INSERT INTO users (username, password_hash, salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (ADMIN_USERNAME, pwd_hash, salt, now, now)
-      )
+    # Créer le compte admin UNIQUEMENT si un mot de passe explicite est passé en variable d'environnement.
+    # Sinon, l'initialisation se fera depuis l'interface à la première connexion.
+    if ADMIN_PASSWORD and ADMIN_PASSWORD.strip():
+      cursor = await db.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,))
+      row = await cursor.fetchone()
+      if not row:
+        pwd_hash, salt = hash_password(ADMIN_PASSWORD.strip())
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+          "INSERT INTO users (username, password_hash, salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          (ADMIN_USERNAME, pwd_hash, salt, now, now)
+        )
 
     await db.commit()
+
+async def is_initialized() -> bool:
+  """Vérifie si au moins un compte administrateur est configuré."""
+  async with aiosqlite.connect(DB_PATH) as db:
+    cursor = await db.execute("SELECT COUNT(*) FROM users")
+    count = (await cursor.fetchone())[0]
+    return count > 0
+
+async def setup_admin(username: str, password: str) -> bool:
+  """Configure le compte administrateur lors de la première connexion."""
+  async with aiosqlite.connect(DB_PATH) as db:
+    cursor = await db.execute("SELECT COUNT(*) FROM users")
+    count = (await cursor.fetchone())[0]
+    if count > 0:
+      raise ValueError("Le studio est déjà initialisé. Veuillez vous connecter.")
+
+    clean_user = username.strip() or "admin"
+    pwd_hash, salt = hash_password(password.strip())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+      "INSERT INTO users (username, password_hash, salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      (clean_user, pwd_hash, salt, now, now)
+    )
+    await db.commit()
+    return True
 
 # --- Modèles d'étiquettes ---
 

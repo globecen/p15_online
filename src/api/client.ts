@@ -77,7 +77,24 @@ class ApiClient {
     return response.json();
   }
 
-  // --- Authentification ---
+  // --- Authentification & Initialisation ---
+
+  async getAuthStatus(): Promise<{ initialized: boolean }> {
+    return this.request<{ initialized: boolean }>('/auth/status');
+  }
+
+  async setupAdmin(data: {
+    username: string;
+    password: string;
+    confirm_password?: string;
+  }): Promise<{ token: string; username: string }> {
+    const res = await this.request<{ token: string; username: string }>('/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    this.setToken(res.token);
+    return res;
+  }
 
   async login(username: string, password: string): Promise<{ token: string; username: string }> {
     const data = await this.request<{ token: string; username: string }>('/auth/login', {

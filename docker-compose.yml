@@ -10,7 +10,9 @@ services:
     environment:
       - PORT=8080
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=pristar123
+      # Mot de passe admin : défini lors de la 1ère connexion depuis l'interface web
+      # (ou décommentez la ligne ci-dessous pour forcer un mot de passe prédéfini)
+      # - ADMIN_PASSWORD=votre-mot-de-passe
       - SECRET_KEY=cle-secrete-a-personnaliser-pristar-p15-2026
       # Adresse MAC Bluetooth optionnelle pour auto-connexion au démarrage
       # - PRINTER_MAC=AA:BB:CC:DD:EE:FF

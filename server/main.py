@@ -57,6 +57,11 @@ app.add_middleware(
 
 # --- Schémas Pydantic ---
 
+class SetupRequest(BaseModel):
+  username: str = "admin"
+  password: str
+  confirm_password: Optional[str] = None
+
 class LoginRequest(BaseModel):
   username: str
   password: str
@@ -91,10 +96,45 @@ class PrintRequest(BaseModel):
 class ConnectRequest(BaseModel):
   address: str
 
-# --- Routes Authentification ---
+# --- Routes Authentification & Initialisation ---
+
+@app.get("/api/auth/status")
+async def get_auth_status():
+  """Indique si le studio a déjà été initialisé avec un mot de passe administrateur."""
+  initialized = await database.is_initialized()
+  return {"initialized": initialized}
+
+@app.post("/api/auth/setup", response_model=LoginResponse)
+async def setup_admin_account(req: SetupRequest):
+  """Configure le compte administrateur lors de la première connexion."""
+  initialized = await database.is_initialized()
+  if initialized:
+    raise HTTPException(status_code=400, detail="Le studio est déjà initialisé. Veuillez vous connecter.")
+
+  if req.confirm_password is not None and req.password != req.confirm_password:
+    raise HTTPException(status_code=400, detail="Les deux mots de passe ne correspondent pas.")
+
+  if len(req.password.strip()) < 4:
+    raise HTTPException(status_code=400, detail="Le mot de passe doit comporter au moins 4 caractères.")
+
+  clean_username = req.username.strip() or "admin"
+  try:
+    await database.setup_admin(clean_username, req.password.strip())
+  except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e))
+
+  token = create_access_token({"sub": clean_username})
+  return LoginResponse(token=token, username=clean_username)
 
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(req: LoginRequest):
+  initialized = await database.is_initialized()
+  if not initialized:
+    raise HTTPException(
+      status_code=400,
+      detail="Le studio n'a pas encore été initialisé. Veuillez définir votre mot de passe administrateur."
+    )
+
   async with database.aiosqlite.connect(config.DB_PATH) as db:
     db.row_factory = database.aiosqlite.Row
     cursor = await db.execute("SELECT * FROM users WHERE username = ?", (req.username,))
