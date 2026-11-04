@@ -1,7 +1,17 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { LabelDimensions, LabelElement, PX_PER_MM } from '../types/label';
 import { renderElementToCanvas } from '../utils/canvas-renderer';
-import { RotateCw } from 'lucide-react';
+import {
+  RotateCw,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  AlignCenter,
+  Edit3,
+  Copy,
+  Trash2,
+} from 'lucide-react';
 
 interface CanvasEditorProps {
   dimensions: LabelDimensions;
@@ -12,6 +22,12 @@ interface CanvasEditorProps {
   onDeleteSelected: () => void;
   onDuplicateSelected: () => void;
   zoom: number;
+  onZoomChange: (zoom: number) => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onOpenProperties?: () => void;
 }
 
 type DragAction = 'move' | 'resize' | 'rotate' | null;
@@ -26,6 +42,12 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   onDeleteSelected,
   onDuplicateSelected,
   zoom,
+  onZoomChange,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
+  onOpenProperties,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,6 +77,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   const activeHandleRef = useRef(activeHandle);
   activeHandleRef.current = activeHandle;
+
+  // Pinch-to-zoom multi-touch refs
+  const pinchStartDistRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef<number>(zoom);
 
   // Redessiner le canvas principal à chaque changement
   const drawCanvas = useCallback(async () => {
@@ -235,6 +261,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     dragActionRef.current = null;
     dragStartRef.current = null;
     activeHandleRef.current = null;
+    pinchStartDistRef.current = null;
     setDragAction(null);
     setActiveHandle(null);
     setDragStart(null);
@@ -242,26 +269,45 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     setShowGuideY(false);
   }, []);
 
-  // Écouteurs globaux sur window pour un déplacement fluide même hors du canvas
+  // Écouteurs globaux sur window pour déplacement fluide et pinch-zoom
   useEffect(() => {
-    if (!dragAction) return;
-
     const handleWindowMouseMove = (e: MouseEvent) => {
-      handleMoveAt(e.clientX, e.clientY);
+      if (dragActionRef.current) {
+        handleMoveAt(e.clientX, e.clientY);
+      }
     };
 
     const handleWindowMouseUp = () => {
-      handleEnd();
+      if (dragActionRef.current) {
+        handleEnd();
+      }
     };
 
     const handleWindowTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
+      if (e.touches.length === 2 && pinchStartDistRef.current !== null) {
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = dist / pinchStartDistRef.current;
+        const nextZoom = Math.min(3.5, Math.max(0.5, Math.round(pinchStartZoomRef.current * factor * 20) / 20));
+        onZoomChange(nextZoom);
+        return;
+      }
+
+      if (e.touches.length === 1 && dragActionRef.current) {
         handleMoveAt(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
 
-    const handleWindowTouchEnd = () => {
-      handleEnd();
+    const handleWindowTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        pinchStartDistRef.current = null;
+      }
+      if (dragActionRef.current) {
+        handleEnd();
+      }
     };
 
     window.addEventListener('mousemove', handleWindowMouseMove);
@@ -275,7 +321,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       window.removeEventListener('touchmove', handleWindowTouchMove);
       window.removeEventListener('touchend', handleWindowTouchEnd);
     };
-  }, [dragAction, handleMoveAt, handleEnd]);
+  }, [handleMoveAt, handleEnd, onZoomChange]);
 
   // Clic ou tap sur le canvas pour sélectionner ou commencer à déplacer un élément
   const handleStartAt = (clientX: number, clientY: number) => {
@@ -401,14 +447,129 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     });
   };
 
+  // Actions rapides d'alignement et rotation
+  const centerElementHorizontal = () => {
+    if (!selectedElement) return;
+    onUpdateElement({
+      ...selectedElement,
+      x: Math.round((widthPx - selectedElement.width) / 2),
+    });
+  };
+
+  const rotateElement90 = () => {
+    if (!selectedElement) return;
+    const currentRot = selectedElement.rotation || 0;
+    onUpdateElement({
+      ...selectedElement,
+      rotation: (currentRot + 90) % 360,
+    });
+  };
+
+  // Ajuster automatiquement le zoom pour un affichage optimal
+  const handleFitScreen = () => {
+    if (!containerRef.current) return;
+    const containerW = containerRef.current.clientWidth;
+    const containerH = containerRef.current.clientHeight;
+
+    const fitW = (containerW - 32) / widthPx;
+    const fitH = (containerH - 48) / heightPx;
+    const optimalFit = Math.min(fitW, fitH);
+
+    if (optimalFit * heightPx < 140) {
+      const tactileZoom = Math.min(2.8, Math.max(1.8, 180 / heightPx));
+      onZoomChange(Math.round(tactileZoom * 10) / 10);
+    } else {
+      onZoomChange(Math.min(3.0, Math.max(0.6, Math.round(optimalFit * 10) / 10)));
+    }
+  };
+
+  // Basculer entre vue d'ensemble et mode tactile 2x
+  const handleToggleFitZoom = () => {
+    if (zoom >= 1.8) {
+      if (containerRef.current) {
+        const containerW = containerRef.current.clientWidth;
+        const fitW = (containerW - 36) / widthPx;
+        onZoomChange(Math.min(2.0, Math.max(0.6, Math.round(fitW * 10) / 10)));
+      } else {
+        onZoomChange(1.0);
+      }
+    } else {
+      const tactileZoom = Math.min(2.8, Math.max(1.8, 180 / heightPx));
+      onZoomChange(Math.round(tactileZoom * 10) / 10);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 flex flex-col items-center justify-center p-4 sm:p-8 overflow-auto bg-slate-900/60 select-none touch-none"
+      className="relative flex-1 flex flex-col items-center justify-center p-2 sm:p-4 md:p-8 overflow-auto bg-slate-900/60 select-none"
     >
+      {/* HUD Flottant : Zoom & Historique (Accessible à tout moment en haut à droite) */}
+      <div className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 z-30 flex items-center gap-1 p-1 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-xl backdrop-blur-md select-none">
+        {onUndo && (
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-30 transition-all md:hidden cursor-pointer"
+            title="Annuler (Ctrl+Z)"
+          >
+            <RotateCcw size={14} />
+          </button>
+        )}
+        {onRedo && (
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-30 transition-all md:hidden cursor-pointer"
+            title="Rétablir (Ctrl+Y)"
+          >
+            <RotateCw size={14} />
+          </button>
+        )}
+
+        <div className="h-4 w-px bg-slate-700/60 mx-0.5 md:hidden" />
+
+        {/* Dézoomer */}
+        <button
+          onClick={() => onZoomChange(Math.max(0.5, Math.round((zoom - 0.25) * 100) / 100))}
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
+          title="Dézoomer"
+        >
+          <ZoomOut size={14} />
+        </button>
+
+        {/* Pourcentage de zoom cliquable */}
+        <button
+          onClick={handleToggleFitZoom}
+          className="px-2 py-1 text-[11px] font-mono font-semibold text-slate-300 hover:text-white rounded hover:bg-slate-800/80 transition-all cursor-pointer"
+          title="Cliquer pour basculer le zoom"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+
+        {/* Zoomer */}
+        <button
+          onClick={() => onZoomChange(Math.min(3.5, Math.round((zoom + 0.25) * 100) / 100))}
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
+          title="Zoomer"
+        >
+          <ZoomIn size={14} />
+        </button>
+
+        {/* Bouton Ajuster la taille */}
+        <button
+          onClick={handleFitScreen}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[11px] font-semibold transition-all cursor-pointer ml-0.5"
+          title="Ajuster la taille optimale à l'écran"
+        >
+          <Maximize2 size={12} />
+          <span className="hidden sm:inline">Ajuster</span>
+        </button>
+      </div>
+
       {/* Règle supérieure en millimètres */}
       <div
-        className="flex items-end mb-2 h-6 border-b border-slate-700/80 font-mono text-[10px] text-slate-400"
+        className="flex items-end mb-1.5 h-5 border-b border-slate-700/80 font-mono text-[9px] text-slate-400 select-none shrink-0"
         style={{ width: `${widthPx * zoom}px` }}
       >
         <div className="w-full flex justify-between px-1">
@@ -420,7 +581,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       {/* Cadre de l'étiquette avec ombre */}
       <div
-        className="relative group transition-all duration-75 shadow-2xl rounded-sm"
+        className="relative group transition-all duration-75 shadow-2xl rounded-sm shrink-0"
         style={{
           width: `${widthPx * zoom}px`,
           height: `${heightPx * zoom}px`,
@@ -431,7 +592,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           ref={canvasRef}
           onMouseDown={(e) => handleStartAt(e.clientX, e.clientY)}
           onTouchStart={(e) => {
-            if (e.touches.length > 0) {
+            if (e.touches.length === 2) {
+              const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+              );
+              pinchStartDistRef.current = dist;
+              pinchStartZoomRef.current = zoom;
+            } else if (e.touches.length === 1) {
               handleStartAt(e.touches[0].clientX, e.touches[0].clientY);
             }
           }}
@@ -473,45 +641,93 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
               data-handle="rotate"
               onMouseDown={handleRotateStart}
               onTouchStart={handleRotateStart}
-              className="absolute -top-7 left-1/2 -translate-x-1/2 w-6 h-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-md touch-none z-30"
+              className="absolute -top-8 left-1/2 -translate-x-1/2 w-7 h-7 sm:w-6 sm:h-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg touch-none z-30"
               title="Faire pivoter"
             >
-              <RotateCw size={12} />
+              <RotateCw size={13} />
             </div>
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-indigo-500 pointer-events-none" />
 
-            {/* Poignées de redimensionnement */}
+            {/* Poignées de redimensionnement agrandies pour mobile/tactile */}
             <div
               data-handle="resize-nw"
               onMouseDown={(e) => handleResizeStart(e, 'nw')}
               onTouchStart={(e) => handleResizeStart(e, 'nw')}
-              className="absolute -top-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
+              className="absolute -top-2.5 -left-2.5 w-5 h-5 sm:w-4 sm:h-4 bg-white border-2 border-indigo-600 cursor-nwse-resize rounded-sm hover:scale-125 touch-none z-30 shadow-md"
             />
             <div
               data-handle="resize-ne"
               onMouseDown={(e) => handleResizeStart(e, 'ne')}
               onTouchStart={(e) => handleResizeStart(e, 'ne')}
-              className="absolute -top-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
+              className="absolute -top-2.5 -right-2.5 w-5 h-5 sm:w-4 sm:h-4 bg-white border-2 border-indigo-600 cursor-nesw-resize rounded-sm hover:scale-125 touch-none z-30 shadow-md"
             />
             <div
               data-handle="resize-se"
               onMouseDown={(e) => handleResizeStart(e, 'se')}
               onTouchStart={(e) => handleResizeStart(e, 'se')}
-              className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border border-indigo-600 cursor-nwse-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
+              className="absolute -bottom-2.5 -right-2.5 w-5 h-5 sm:w-4 sm:h-4 bg-white border-2 border-indigo-600 cursor-nwse-resize rounded-sm hover:scale-125 touch-none z-30 shadow-md"
             />
             <div
               data-handle="resize-sw"
               onMouseDown={(e) => handleResizeStart(e, 'sw')}
               onTouchStart={(e) => handleResizeStart(e, 'sw')}
-              className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border border-indigo-600 cursor-nesw-resize rounded-xs hover:scale-125 touch-none z-30 shadow-xs"
+              className="absolute -bottom-2.5 -left-2.5 w-5 h-5 sm:w-4 sm:h-4 bg-white border-2 border-indigo-600 cursor-nesw-resize rounded-sm hover:scale-125 touch-none z-30 shadow-md"
             />
           </div>
         )}
       </div>
 
-      {/* Règle latérale / infos dimensions */}
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400 font-mono">
-        <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60">
+      {/* Barre d'action contextuelle flottante pour l'élément sélectionné */}
+      {selectedElement && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 p-1 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md select-none animate-in fade-in slide-in-from-bottom-2 duration-150">
+          {onOpenProperties && (
+            <button
+              onClick={onOpenProperties}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition-all cursor-pointer"
+              title="Modifier les options et le style"
+            >
+              <Edit3 size={13} />
+              <span>Modifier</span>
+            </button>
+          )}
+
+          <button
+            onClick={centerElementHorizontal}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
+            title="Centrer horizontalement"
+          >
+            <AlignCenter size={14} />
+          </button>
+
+          <button
+            onClick={rotateElement90}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
+            title="Pivoter de 90°"
+          >
+            <RotateCw size={14} />
+          </button>
+
+          <button
+            onClick={onDuplicateSelected}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer"
+            title="Dupliquer"
+          >
+            <Copy size={14} />
+          </button>
+
+          <button
+            onClick={onDeleteSelected}
+            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-all cursor-pointer"
+            title="Supprimer"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Informations dimensions */}
+      <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400 font-mono shrink-0">
+        <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60">
           Format : {dimensions.widthMm} × {dimensions.heightMm} mm
         </span>
         <span className="text-slate-400">Zoom : {Math.round(zoom * 100)}%</span>

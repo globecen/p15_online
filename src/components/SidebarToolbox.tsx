@@ -246,8 +246,13 @@ export const SidebarToolbox: React.FC<SidebarToolboxProps> = ({
 
   return (
     <aside className="w-full md:w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full z-10 select-none">
+      {/* Barre poignée visuelle pour mobile (Bottom Sheet) */}
+      <div className="md:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+        <div className="w-12 h-1.5 rounded-full bg-slate-700/80" />
+      </div>
+
       {/* En-tête sur mobile avec bouton fermer */}
-      <div className="p-3 border-b border-slate-800 flex items-center justify-between gap-2">
+      <div className="p-3 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
         <button
           onClick={onOpenTemplates}
           className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-medium text-xs shadow-md shadow-indigo-600/20 active:scale-[0.98] transition-all"
@@ -258,9 +263,10 @@ export const SidebarToolbox: React.FC<SidebarToolboxProps> = ({
         {onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="md:hidden p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+            className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold"
           >
-            <X size={18} />
+            <span>Fermer</span>
+            <X size={15} />
           </button>
         )}
       </div>

@@ -55,13 +55,65 @@ export default function App() {
     paperType: 'gap',
   });
 
-  // Zoom de prévisualisation (auto-adaptatif mobile)
+  // Zoom de prévisualisation (auto-adaptatif mobile & grand format horizontal)
   const [zoom, setZoom] = useState<number>(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      return 1.0;
+    if (typeof window !== 'undefined') {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const labelW = PRESET_LABEL_SIZES[0].widthMm * 8;
+      const labelH = PRESET_LABEL_SIZES[0].heightMm * 8;
+      if (w > h) {
+        // Mode horizontal / paysage : grand format qui remplit l'écran
+        const availH = Math.max(160, h - 95);
+        const availW = Math.max(260, w - 48);
+        return Math.min(3.0, Math.max(1.8, Math.min(availH / labelH, availW / labelW)));
+      } else if (w < 768) {
+        // Mode vertical / portrait : hauteur tactile confortable
+        const targetH = Math.min(220, Math.max(165, h * 0.26));
+        return Math.min(2.8, Math.max(1.8, targetH / labelH));
+      }
     }
     return 1.4;
   });
+
+  // Calcul automatique du zoom idéal
+  const calculateOptimalZoom = useCallback(() => {
+    if (typeof window === 'undefined') return 1.4;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const labelW = dimensions.widthMm * 8;
+    const labelH = dimensions.heightMm * 8;
+
+    if (w > h) {
+      // Horizontal / Paysage : grand format qui remplit la zone
+      const availH = Math.max(160, h - 95);
+      const availW = Math.max(260, w - 48);
+      const zH = availH / labelH;
+      const zW = availW / labelW;
+      return Math.min(3.0, Math.max(1.8, Math.min(zH, zW)));
+    } else if (w < 768) {
+      // Vertical / Portrait : hauteur tactile minimale de 165-220px
+      const targetH = Math.min(220, Math.max(165, h * 0.26));
+      return Math.min(2.8, Math.max(1.8, targetH / labelH));
+    }
+    return 1.4;
+  }, [dimensions.widthMm, dimensions.heightMm]);
+
+  // Réajuster le zoom à chaque rotation d'écran ou changement de dimension d'étiquette
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 || window.innerWidth > window.innerHeight) {
+        setZoom(calculateOptimalZoom());
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [calculateOptimalZoom]);
 
   // Statut de l'imprimante sur le serveur Docker
   const [serverStatus, setServerStatus] = useState<ServerPrinterStatus | null>(null);
@@ -276,17 +328,20 @@ export default function App() {
 
       {/* Zone de travail centrale */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Volet Boîte à outils : Desktop fixe (md:block) ou Drawer mobile */}
+        {/* Volet Boîte à outils : Desktop fixe (md:block) ou Drawer/BottomSheet mobile */}
         <div
           className={`${
             mobileDrawer === 'tools'
-              ? 'fixed inset-y-0 left-0 z-40 w-80 shadow-2xl transition-transform duration-200'
+              ? 'fixed inset-x-0 bottom-0 md:inset-y-0 md:left-0 z-40 max-h-[82vh] md:max-h-full w-full md:w-80 rounded-t-2xl md:rounded-none bg-slate-900 shadow-2xl border-t md:border-t-0 md:border-r border-slate-800 transition-all duration-200 overflow-hidden flex flex-col'
               : 'hidden md:block'
           }`}
         >
           <SidebarToolbox
             dimensions={dimensions}
-            onAddElement={handleAddElement}
+            onAddElement={(el) => {
+              handleAddElement(el);
+              setMobileDrawer('none');
+            }}
             onOpenTemplates={() => {
               setMobileDrawer('none');
               setIsTemplatesModalOpen(true);
@@ -302,22 +357,24 @@ export default function App() {
           selectedId={selectedId}
           onSelect={(id) => {
             setSelectedId(id);
-            // Sur mobile, si on sélectionne un élément, on peut ouvrir directement les propriétés
-            if (id && window.innerWidth < 768) {
-              setMobileDrawer('props');
-            }
           }}
           onUpdateElement={handleUpdateElement}
           onDeleteSelected={handleDeleteSelected}
           onDuplicateSelected={handleDuplicateSelected}
           zoom={zoom}
+          onZoomChange={setZoom}
+          canUndo={historyIndex > 0}
+          canRedo={historyIndex < history.length - 1}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onOpenProperties={() => setMobileDrawer('props')}
         />
 
-        {/* Volet Propriétés & Format : Desktop fixe (md:block) ou Drawer mobile */}
+        {/* Volet Propriétés & Format : Desktop fixe (md:block) ou Drawer/BottomSheet mobile */}
         <div
           className={`${
             mobileDrawer === 'props'
-              ? 'fixed inset-y-0 right-0 z-40 w-80 shadow-2xl transition-transform duration-200'
+              ? 'fixed inset-x-0 bottom-0 md:inset-y-0 md:right-0 z-40 max-h-[75vh] md:max-h-full w-full md:w-80 rounded-t-2xl md:rounded-none bg-slate-900 shadow-2xl border-t md:border-t-0 md:border-l border-slate-800 transition-all duration-200 overflow-hidden flex flex-col'
               : 'hidden md:block'
           }`}
         >
@@ -341,7 +398,7 @@ export default function App() {
         {mobileDrawer !== 'none' && (
           <div
             onClick={() => setMobileDrawer('none')}
-            className="md:hidden fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-30"
+            className="md:hidden fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 transition-opacity"
           />
         )}
       </div>

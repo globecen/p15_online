@@ -71,17 +71,23 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
 
   return (
     <aside className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full z-10 select-none overflow-y-auto">
+      {/* Barre poignée visuelle pour mobile (Bottom Sheet) */}
+      <div className="md:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+        <div className="w-12 h-1.5 rounded-full bg-slate-700/80" />
+      </div>
+
       {/* Bouton fermeture sur mobile */}
       {onCloseMobile && (
-        <div className="md:hidden p-3 border-b border-slate-800 flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-300">
+        <div className="md:hidden px-4 py-2 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <span className="text-xs font-bold text-slate-200">
             {selectedElement ? `Propriétés : ${selectedElement.type.toUpperCase()}` : 'Format & Réglages'}
           </span>
           <button
             onClick={onCloseMobile}
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/30 text-indigo-300 font-semibold text-xs hover:bg-indigo-600 hover:text-white transition-all cursor-pointer"
           >
-            <X size={18} />
+            <span>Fermer</span>
+            <X size={15} />
           </button>
         </div>
       )}
